@@ -31,6 +31,7 @@ type PoolStatus struct {
 	PH                   float64
 	Redox                float64
 	WaterFlow            string
+	WaterFlowAlert       bool
 	LastUpdated          time.Time
 	TemperatureAlert     bool
 	TemperatureAlertType string // "low" or "high"
@@ -131,6 +132,18 @@ func (pm *PoolMonitor) Check() {
 	} else {
 		log.Println("Pool temperature is within expected range")
 	}
+
+	// Check water flow status
+	flowData, hasFlowData := measurements["WaterFlow"]
+	if hasFlowData {
+		if flowData.Value == 0.0 {
+			// Water flow is NO - critical issue
+			log.Println("WARNING: Water flow to probes is NO")
+			pm.sendWaterFlowAlert()
+		} else {
+			log.Println("Water flow to probes is OK")
+		}
+	}
 }
 
 // GetStatus returns the current pool status
@@ -174,8 +187,10 @@ func (pm *PoolMonitor) GetStatus() (*PoolStatus, error) {
 	if flowData, ok := measurements["WaterFlow"]; ok {
 		if flowData.Value == 1.0 {
 			status.WaterFlow = "YES"
+			status.WaterFlowAlert = false
 		} else {
 			status.WaterFlow = "NO"
+			status.WaterFlowAlert = true
 		}
 	}
 
@@ -240,6 +255,50 @@ func (pm *PoolMonitor) sendTemperatureAlert(alertType string, current, expected,
 		log.Printf("Failed to send temperature alert: %v", err)
 	} else {
 		log.Println("Temperature alert sent successfully")
+	}
+}
+
+// sendWaterFlowAlert sends a critical alert when water flow is NO
+func (pm *PoolMonitor) sendWaterFlowAlert() {
+	if pm.alertService == nil || !pm.alertService.IsEnabled() {
+		log.Println("Alert service not available, skipping water flow alert")
+		return
+	}
+
+	if len(pm.defaultReceivers) == 0 {
+		log.Println("No receivers configured, skipping water flow alert")
+		return
+	}
+
+	subject := "CRITICAL: Pool Water Flow Issue"
+	body := fmt.Sprintf(
+		"CRITICAL ALERT: No water flow detected to pool probes!\n\n"+
+			"Status: Water flow is NO\n"+
+			"Time: %s\n\n"+
+			"IMMEDIATE ACTION REQUIRED:\n"+
+			"• Check pool pump operation\n"+
+			"• Verify valves are open\n"+
+			"• Check for blockages in pipes\n"+
+			"• Inspect filter condition\n\n"+
+			"No water flow can cause:\n"+
+			"• Equipment damage\n"+
+			"• Inaccurate readings\n"+
+			"• Pool water quality issues\n\n"+
+			"Please investigate immediately!",
+		time.Now().Format("2006-01-02 15:04:05"))
+
+	message := alerting.Message{
+		Subject:   subject,
+		Body:      body,
+		Priority:  alerting.PriorityCritical,
+		Timestamp: time.Now(),
+	}
+
+	log.Println("Sending critical water flow alert")
+	if err := pm.alertService.SendToMultiple(message, pm.defaultReceivers); err != nil {
+		log.Printf("Failed to send water flow alert: %v", err)
+	} else {
+		log.Println("Water flow alert sent successfully")
 	}
 }
 
