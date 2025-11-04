@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historical Data - MyHome App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+            border-radius: 12px;
+            box-shadow: 
+                0 4px 6px rgba(0, 0, 0, 0.1),
+                inset 0 1px 1px rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .back-button {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            box-shadow: 
+                0 4px 6px rgba(0, 0, 0, 0.1),
+                inset 0 1px 1px rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.2s;
+        }
+        
+        .back-button:hover {
+            background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+            transform: translateY(-2px);
+            box-shadow: 
+                0 6px 8px rgba(0, 0, 0, 0.15),
+                inset 0 1px 1px rgba(255, 255, 255, 0.3);
+        }
+        
+        .page-title {
+            font-family: 'Georgia', serif;
+            color: #2d3748;
+            text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.8);
+        }
+        
+        .time-range-button {
+            background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+            color: #4a5568;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            box-shadow: 
+                0 4px 6px rgba(0, 0, 0, 0.1),
+                inset 0 1px 1px rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            transition: all 0.2s;
+        }
+        
+        .time-range-button:hover {
+            background: linear-gradient(135deg, #e0e0e0 0%, #d0d0d0 100%);
+            transform: translateY(-2px);
+        }
+        
+        .time-range-button.active {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-4xl font-bold page-title">Historical Data</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+
+        <div class="mb-8 flex space-x-4">
+            <button class="time-range-button active" data-hours="24">24 Hours</button>
+            <button class="time-range-button" data-hours="168">7 Days</button>
+            <button class="time-range-button" data-hours="720">30 Days</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="chart-container">
+                <h2 class="text-xl font-semibold mb-4">Temperature</h2>
+                <canvas id="temperatureChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2 class="text-xl font-semibold mb-4">pH Level</h2>
+                <canvas id="phChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2 class="text-xl font-semibold mb-4">Redox</h2>
+                <canvas id="redoxChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2 class="text-xl font-semibold mb-4">Water Flow</h2>
+                <canvas id="flowChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const charts = {
+            temperature: null,
+            ph: null,
+            redox: null,
+            flow: null
+        };
+
+        const measurementTypes = {
+            temperature: 'temperature',
+            ph: 'ph',
+            redox: 'redox',
+            flow: 'water_flow'
+        };
+
+        function createChart(canvasId, label, unit) {
+            return new Chart(document.getElementById(canvasId), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: `${label} (${unit})`,
+                        data: [],
+                        borderColor: '#4299e1',
+                        backgroundColor: 'rgba(66, 153, 225, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: {
+                                    hour: 'MMM D, HH:mm'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: unit
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function fetchHistoricalData(hours) {
+            const now = new Date();
+            const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
+            
+            for (const [key, type] of Object.entries(measurementTypes)) {
+                try {
+                    const response = await fetch(`/api/measurements/history?name=${type}&from=${from.toISOString()}&to=${now.toISOString()}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    
+                    // Update chart data
+                    const chart = charts[key];
+                    chart.data.labels = data.map(m => new Date(m.timestamp));
+                    chart.data.datasets[0].data = data.map(m => m.value);
+                    chart.update();
+                } catch (error) {
+                    console.error(`Error fetching ${type} data:`, error);
+                }
+            }
+        }
+
+        // Initialize charts
+        document.addEventListener('DOMContentLoaded', () => {
+            charts.temperature = createChart('temperatureChart', 'Temperature', '°C');
+            charts.ph = createChart('phChart', 'pH Level', 'pH');
+            charts.redox = createChart('redoxChart', 'Redox', 'mV');
+            charts.flow = createChart('flowChart', 'Water Flow', 'Yes/No');
+            
+            // Load initial data
+            fetchHistoricalData(24);
+            
+            // Add event listeners to time range buttons
+            document.querySelectorAll('.time-range-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    // Remove active class from all buttons
+                    document.querySelectorAll('.time-range-button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    
+                    // Add active class to clicked button
+                    button.classList.add('active');
+                    
+                    // Fetch data for selected time range
+                    const hours = parseInt(button.dataset.hours);
+                    fetchHistoricalData(hours);
+                });
+            });
+        });
+    </script>
+</body>
+</html> 

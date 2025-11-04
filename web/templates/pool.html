@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pool Status</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script>
+        // WebSocket connection
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+
+        function connect() {
+            ws = new WebSocket('{{.WebSocketURL}}');
+            
+            ws.onopen = function() {
+                console.log('Connected to WebSocket');
+                reconnectAttempts = 0;
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'flowStatus') {
+                    updateFlowStatus(data.payload.flowState);
+                }
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket connection closed');
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
+                    setTimeout(connect, 5000);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function updateFlowStatus(flowState) {
+            const statusIndicator = document.querySelector('.status-indicator');
+            const statusText = document.querySelector('.status-text');
+            
+            if (flowState) {
+                statusIndicator.classList.remove('bg-red-500');
+                statusIndicator.classList.add('bg-green-500');
+                statusText.classList.remove('text-red-600');
+                statusText.classList.add('text-green-600');
+                statusText.textContent = 'Flow is Active';
+            } else {
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.classList.add('bg-red-500');
+                statusText.classList.remove('text-green-600');
+                statusText.classList.add('text-red-600');
+                statusText.textContent = 'Flow is Inactive';
+            }
+        }
+
+        // Connect when the page loads
+        window.onload = function() {
+            connect();
+        };
+    </script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Pool Status</h1>
+            <a href="/lights" class="text-blue-600 hover:text-blue-800">View Lights →</a>
+        </div>
+        
+        <!-- Pool Status Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Current Status</h2>
+            <div class="flex items-center">
+                <div class="w-4 h-4 rounded-full status-indicator {{if .PoolStatus.FlowState}}bg-green-500{{else}}bg-red-500{{end}} mr-3"></div>
+                <span class="text-lg status-text {{if .PoolStatus.FlowState}}text-green-600{{else}}text-red-600{{end}}">
+                    Flow is {{if .PoolStatus.FlowState}}Active{{else}}Inactive{{end}}
+                </span>
+            </div>
+            <div class="mt-4">
+                <p class="text-lg text-gray-700">Waterflow: <span class="font-semibold">{{.PoolStatus.Waterflow}}</span> L/min</p>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">Last updated: {{.PoolStatus.UpdatedAt.Format "2006-01-02 15:04:05"}}</p>
+        </div>
+    </div>
+</body>
+</html> 

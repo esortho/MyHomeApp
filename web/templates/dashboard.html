@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - MyHome App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .light-box {
+            aspect-ratio: 1;
+            max-width: 75px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .light-box:hover {
+            transform: scale(1.08);
+        }
+        .light-box.clicked {
+            animation: pulse 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .light-box .light-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .light-box .light-status {
+            font-size: 0.875rem;
+            font-weight: 700;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.92); }
+            100% { transform: scale(1); }
+        }
+        .measurement-box {
+            aspect-ratio: 1;
+            max-width: 150px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .measurement-box:hover {
+            transform: scale(1.08);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
+            <a href="/" class="text-blue-500 hover:text-blue-700">Back to Home</a>
+        </div>
+
+        <!-- Pool Measurements Section -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Pool Measurements</h2>
+            <div id="measurements-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                <div class="measurement-box bg-white rounded-lg shadow-lg p-4 flex flex-col items-center justify-center">
+                    <div class="text-lg font-semibold text-gray-700">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lights Control Section -->
+        <div>
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Lights Control</h2>
+            <div id="lights-grid" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-4">
+                <div class="light-box bg-white rounded-lg shadow-lg p-4 flex flex-col items-center justify-center">
+                    <div class="light-name text-gray-700">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Function to fetch and display pool measurements
+        async function fetchMeasurements() {
+            try {
+                const response = await fetch('/api/measurements');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const measurements = await response.json();
+                const grid = document.getElementById('measurements-grid');
+                grid.innerHTML = '';
+
+                for (const [key, value] of Object.entries(measurements)) {
+                    const box = document.createElement('div');
+                    box.className = 'measurement-box bg-white rounded-lg shadow-lg p-4 flex flex-col items-center justify-center';
+                    
+                    const name = document.createElement('div');
+                    name.className = 'text-lg font-semibold text-gray-700 mb-2';
+                    name.textContent = key.replace(/_/g, ' ').toUpperCase();
+                    
+                    const valueDiv = document.createElement('div');
+                    valueDiv.className = 'text-2xl font-bold text-blue-600';
+                    valueDiv.textContent = `${value.value} ${value.unit}`;
+                    
+                    const time = document.createElement('div');
+                    time.className = 'text-sm text-gray-500 mt-2';
+                    time.textContent = new Date(value.updatedAt).toLocaleTimeString();
+                    
+                    box.appendChild(name);
+                    box.appendChild(valueDiv);
+                    box.appendChild(time);
+                    grid.appendChild(box);
+                }
+            } catch (error) {
+                console.error('Error fetching measurements:', error);
+                const grid = document.getElementById('measurements-grid');
+                grid.innerHTML = `
+                    <div class="col-span-full text-center text-red-500">
+                        Error loading measurements. Please try again later.
+                    </div>
+                `;
+            }
+        }
+
+        // Function to fetch and display lights
+        async function fetchLights() {
+            try {
+                const response = await fetch('/api/lights');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const lights = await response.json();
+                const grid = document.getElementById('lights-grid');
+                grid.innerHTML = '';
+
+                lights.forEach(light => {
+                    const box = document.createElement('div');
+                    box.className = `light-box rounded-lg shadow-lg p-4 flex flex-col items-center justify-center ${light.state.on ? 'bg-yellow-100' : 'bg-blue-100'}`;
+                    
+                    const name = document.createElement('div');
+                    name.className = 'light-name text-gray-700 mb-1';
+                    name.textContent = light.name;
+                    
+                    const state = document.createElement('div');
+                    state.className = 'light-status text-gray-500';
+                    state.textContent = light.state.on ? 'ON' : 'OFF';
+                    
+                    box.appendChild(name);
+                    box.appendChild(state);
+                    
+                    box.addEventListener('click', async () => {
+                        box.classList.add('clicked');
+                        try {
+                            const toggleResponse = await fetch(`/api/lights/${light.id}/toggle`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json'
+                                },
+                                body: JSON.stringify({ on: !light.state.on })
+                            });
+                            
+                            if (!toggleResponse.ok) {
+                                const errorText = await toggleResponse.text();
+                                console.error('Toggle failed:', errorText);
+                                alert('Failed to toggle light. Please try again.');
+                                return;
+                            }
+                            
+                            // Refresh lights after successful toggle
+                            fetchLights();
+                        } catch (error) {
+                            console.error('Error toggling light:', error);
+                            alert('Error toggling light. Please try again.');
+                        }
+                        setTimeout(() => box.classList.remove('clicked'), 700);
+                    });
+                    
+                    grid.appendChild(box);
+                });
+            } catch (error) {
+                console.error('Error fetching lights:', error);
+                const grid = document.getElementById('lights-grid');
+                grid.innerHTML = `
+                    <div class="col-span-full text-center text-red-500">
+                        Error loading lights. Please try again later.
+                    </div>
+                `;
+            }
+        }
+
+        // Initial fetch
+        fetchMeasurements();
+        fetchLights();
+
+        // Refresh data every 30 seconds
+        setInterval(() => {
+            fetchMeasurements();
+            fetchLights();
+        }, 30000);
+    </script>
+</body>
+</html> 

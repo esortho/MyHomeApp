@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lights Control - MyHome App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .light-box {
+            aspect-ratio: 1 / 1;
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+            cursor: pointer;
+            width: 100%;
+            max-width: 150px; /* Limit maximum size */
+            margin: 0 auto; /* Center in grid cell */
+        }
+        .light-box:hover {
+            transform: scale(1.08);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .light-box.on {
+            background-color: #fbbf24; /* yellow-400 */
+        }
+        .light-box.off {
+            background-color: #3b82f6; /* blue-500 */
+        }
+        .light-box.clicked {
+            animation: pulse 0.7s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.92); }
+            100% { transform: scale(1); }
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        @media (min-width: 1024px) {
+            .grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Lights Control</h1>
+            <a href="/" class="text-blue-600 hover:text-blue-800">Back to Home</a>
+        </div>
+
+        <div class="grid">
+            <!-- Light controls will be dynamically added here -->
+            <div class="light-box off rounded-lg shadow-lg p-4 flex flex-col items-center justify-center">
+                <h2 class="text-lg font-semibold text-white mb-1">Loading lights...</h2>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Function to fetch and display lights
+        async function fetchLights() {
+            try {
+                const response = await fetch('/api/lights');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const lights = await response.json();
+                
+                const container = document.querySelector('.grid');
+                container.innerHTML = ''; // Clear loading message
+                
+                lights.forEach(light => {
+                    const lightBox = document.createElement('div');
+                    lightBox.className = `light-box ${light.state.on ? 'on' : 'off'} rounded-lg shadow-lg p-4 flex flex-col items-center justify-center`;
+                    lightBox.dataset.id = light.id;
+                    lightBox.dataset.on = light.state.on;
+                    
+                    lightBox.innerHTML = `
+                        <h2 class="text-lg font-semibold text-white mb-1">${light.name}</h2>
+                        <p class="text-white text-xs">${light.state.reachable ? 'Connected' : 'Not Connected'}</p>
+                    `;
+                    
+                    // Add click event to toggle light
+                    lightBox.addEventListener('click', async () => {
+                        // Add animation class
+                        lightBox.classList.add('clicked');
+                        setTimeout(() => lightBox.classList.remove('clicked'), 700);
+                        
+                        // Toggle light state
+                        const newState = lightBox.dataset.on === 'true' ? false : true;
+                        try {
+                            console.log(`Toggling light ${light.id} to ${newState}`);
+                            const toggleResponse = await fetch(`/api/lights/${light.id}/toggle`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json'
+                                },
+                                body: JSON.stringify({ on: newState })
+                            });
+                            
+                            if (toggleResponse.ok) {
+                                console.log(`Successfully toggled light ${light.id} to ${newState}`);
+                                // Update UI
+                                lightBox.dataset.on = newState;
+                                lightBox.className = `light-box ${newState ? 'on' : 'off'} rounded-lg shadow-lg p-4 flex flex-col items-center justify-center`;
+                            } else {
+                                const errorText = await toggleResponse.text();
+                                console.error(`Failed to toggle light ${light.id}: ${toggleResponse.status} ${toggleResponse.statusText} - ${errorText}`);
+                                // Show error message to user
+                                alert(`Failed to toggle light: ${errorText}`);
+                                // Refresh lights to get the correct state
+                                fetchLights();
+                            }
+                        } catch (error) {
+                            console.error(`Error toggling light ${light.id}:`, error);
+                            // Show error message to user
+                            alert(`Error toggling light: ${error.message}`);
+                            // Refresh lights to get the correct state
+                            fetchLights();
+                        }
+                    });
+                    
+                    container.appendChild(lightBox);
+                });
+            } catch (error) {
+                console.error('Error fetching lights:', error);
+                const container = document.querySelector('.grid');
+                container.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <div class="text-red-600">Error loading lights. Please try again later.</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Fetch lights when page loads
+        fetchLights();
+    </script>
+</body>
+</html> 

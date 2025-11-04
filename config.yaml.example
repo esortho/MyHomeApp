@@ -1,0 +1,31 @@
+server:
+  port: "8080"
+
+aseko:
+  email: "your-email@example.com"
+  password: "your-password"
+  base_url: "https://aseko.cloud/api"
+  websocket_url: "wss://aseko.cloud/ws"
+
+pool:
+  expected_temperature: 28.0    # Expected pool temperature in °C
+  check_interval: "1h"           # How often to check (e.g., "1h", "30m", "2h")
+  temperature_threshold: 2.0     # Alert if temperature differs by more than this value
+
+hue:
+  bridge_ip: "192.168.1.100"
+  api_key: "your-hue-api-key"
+
+alerting:
+  email:
+    enabled: true
+    smtp_host: "smtp.gmail.com"
+    smtp_port: "587"
+    smtp_user: "your-email@gmail.com"
+    smtp_password: "your-app-password"
+    from_address: "your-email@gmail.com"
+    from_name: "MyHomeApp Alerts"
+    use_tls: true
+  default_receivers:
+    - email: "recipient@example.com"
+      name: "Recipient Name" 
