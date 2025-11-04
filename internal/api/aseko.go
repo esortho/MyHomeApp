@@ -696,9 +696,6 @@ func (c *AsekoClient) SelectUnit(serialNumber string) error {
 		return fmt.Errorf("error reading response: %v", err)
 	}
 
-	// Debug: Print raw response body
-	log.Printf("SelectUnit raw response body: %s", string(body))
-
 	var unitResp UnitResponse
 	if err := json.Unmarshal(body, &unitResp); err != nil {
 		return fmt.Errorf("error parsing response: %v, response body: %s", err, string(body))
