@@ -461,7 +461,6 @@ func (c *AsekoClient) fetchUnitList() error {
 
 	// Debug: Print request details
 	log.Printf("Request URL: %s\n", req.URL.String())
-	log.Printf("Request headers: %v\n", req.Header)
 	log.Printf("Request body: %s\n", string(jsonData))
 
 	resp, err := c.httpClient.Do(req)
