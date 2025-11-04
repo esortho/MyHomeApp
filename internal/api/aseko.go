@@ -680,7 +680,6 @@ func (c *AsekoClient) SelectUnit(serialNumber string) error {
 	// Debug: Print request details
 	log.Printf("SelectUnit request URL: %s", req.URL.String())
 	log.Printf("SelectUnit request headers: %v", req.Header)
-	log.Printf("SelectUnit request body: %s", string(jsonData))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
