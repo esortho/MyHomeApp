@@ -279,7 +279,7 @@ func (c *AsekoClient) Login() error {
 
 	// Debug: Print request details
 	log.Printf("Login request URL: %s", req.URL.String())
-	log.Printf("Login request headers: %v", req.Header)
+	//log.Printf("Login request headers: %v", req.Header)
 	log.Printf("Login request body: %s", string(jsonData))
 
 	resp, err := c.httpClient.Do(req)
@@ -298,7 +298,7 @@ func (c *AsekoClient) Login() error {
 	}
 
 	// Print the response for debugging
-	log.Printf("Login response body: %s", string(body))
+	//log.Printf("Login response body: %s", string(body))
 
 	var loginResp struct {
 		User struct {
@@ -461,7 +461,7 @@ func (c *AsekoClient) fetchUnitList() error {
 
 	// Debug: Print request details
 	log.Printf("Request URL: %s\n", req.URL.String())
-	log.Printf("Request body: %s\n", string(jsonData))
+	//log.Printf("Request body: %s\n", string(jsonData))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -478,7 +478,7 @@ func (c *AsekoClient) fetchUnitList() error {
 	}
 
 	// Debug: Print response body
-	log.Printf("Response body: %s\n", string(body))
+	//	log.Printf("Response body: %s\n", string(body))
 
 	var unitResponse UnitListResponse
 	if err := json.Unmarshal(body, &unitResponse); err != nil {
@@ -678,7 +678,7 @@ func (c *AsekoClient) SelectUnit(serialNumber string) error {
 
 	// Debug: Print request details
 	log.Printf("SelectUnit request URL: %s", req.URL.String())
-	log.Printf("SelectUnit request headers: %v", req.Header)
+	//log.Printf("SelectUnit request headers: %v", req.Header)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -705,13 +705,15 @@ func (c *AsekoClient) SelectUnit(serialNumber string) error {
 		responseJSON, _ := json.MarshalIndent(unitResp, "", "  ")
 		log.Printf("Empty response for unit %s. Full response: %s", serialNumber, string(responseJSON))
 
-		// Check if we have a token
-		if c.token == "" {
-			return fmt.Errorf("authentication token is empty, please check login")
+		// Attempt to reconnect and retry
+		log.Println("Attempting full reconnect due to empty response...")
+		if err := c.Initialize(); err != nil {
+			return fmt.Errorf("failed to reconnect: %w", err)
 		}
-
-		// Check if the token might be expired
-		return fmt.Errorf("received empty response for unit %s, token might be expired or invalid", serialNumber)
+		
+		log.Println("Reconnected successfully, retrying SelectUnit...")
+		// Retry the unit selection after reconnecting
+		return c.selectUnitAfterReconnect(serialNumber)
 	}
 
 	// Check the response type and handle accordingly
@@ -932,4 +934,199 @@ func (c *AsekoClient) GetMeasurements() (map[string]struct {
 	}
 
 	return result, nil
+}
+
+// selectUnitAfterReconnect retries unit selection after a reconnect
+// This method does NOT retry again to avoid infinite recursion
+func (c *AsekoClient) selectUnitAfterReconnect(serialNumber string) error {
+	query := `query UnitDetailStatusQuery($sn: String!) {
+		unitBySerialNumber(sn: $sn) {
+			__typename
+			serialNumber
+			name
+			note
+			statusMessages {
+				__typename
+				type
+				message
+				severity
+				detail
+			}
+			offlineFor
+			measurements {
+				__typename
+				type
+				value
+				unit
+				name
+				updatedAt
+			}
+			statusValues {
+				__typename
+				primary {
+					__typename
+					id
+					type
+					backgroundColor
+					textColor
+					topLeft
+					topRight
+					center {
+						__typename
+						value
+						iconName
+						isNext
+						configuration {
+							__typename
+							name
+							speed
+							start
+							end
+							overrideIntervalText
+							poolFlow
+						}
+					}
+					bottomRight
+					bottomLeft {
+						__typename
+						prefix
+						suffix
+						style
+					}
+				}
+				secondary {
+					__typename
+					id
+					type
+					backgroundColor
+					textColor
+					topLeft
+					topRight
+					center {
+						__typename
+						value
+						iconName
+						isNext
+						configuration {
+							__typename
+							name
+							speed
+							start
+							end
+							overrideIntervalText
+							poolFlow
+						}
+					}
+					bottomRight
+					bottomLeft {
+						__typename
+						prefix
+						suffix
+						style
+					}
+				}
+			}
+			backwash {
+				__typename
+				id
+				running
+				duration
+				elapsed
+				configuration {
+					__typename
+					oncePerXDays
+					start
+					takes
+				}
+			}
+			waterFilling {
+				__typename
+				id
+				waterLevel
+				totalTime
+				totalLiters
+				totalTimeFromLastReset
+				totalLitersFromLastReset
+				lastReset
+				litersPerMinute
+				configuration {
+					__typename
+					levelHigh
+					levelLow
+					levelMax
+					levelMin
+					maxFillingTime
+					enabled
+				}
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"sn": serialNumber,
+	}
+
+	requestBody := map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("error marshaling request: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", c.config.Aseko.BaseURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-App-Name", "pool-live")
+	req.Header.Set("X-App-Version", "4.2.0")
+	req.Header.Set("X-Mode", "production")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+
+	log.Printf("Retry after reconnect: SelectUnit request URL: %s", req.URL.String())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("Retry after reconnect: SelectUnit response status: %s", resp.Status)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading response: %v", err)
+	}
+
+	var unitResp UnitResponse
+	if err := json.Unmarshal(body, &unitResp); err != nil {
+		return fmt.Errorf("error parsing response: %v, response body: %s", err, string(body))
+	}
+
+	// Check if we have a valid response (no retry on second attempt)
+	if unitResp.Data.UnitBySerialNumber.SerialNumber == "" {
+		responseJSON, _ := json.MarshalIndent(unitResp, "", "  ")
+		log.Printf("Still empty response after reconnect for unit %s. Full response: %s", serialNumber, string(responseJSON))
+		return fmt.Errorf("received empty response for unit %s even after reconnect", serialNumber)
+	}
+
+	// Check the response type and handle accordingly
+	switch unitResp.Data.UnitBySerialNumber.Typename {
+	case "UnitNotFoundError":
+		return fmt.Errorf("unit not found: %s", serialNumber)
+	case "UnitAccessDeniedError":
+		return fmt.Errorf("access denied for unit: %s", serialNumber)
+	case "UnitNeverConnected":
+		log.Printf("Unit %s has never been connected", serialNumber)
+		return fmt.Errorf("unit %s has never been connected", serialNumber)
+	}
+
+	c.selectedUnit = &unitResp
+	log.Printf("Successfully selected unit after reconnect: %s", serialNumber)
+	return nil
 }
